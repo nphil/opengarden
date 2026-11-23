@@ -359,6 +359,19 @@ firmware therefore requires reading the device flash directly — which means
 opening the base, and the Marvell part may store code in internal,
 read-protected flash. **[OBS]**
 
+### The connection is TLS regardless of the port (no downgrade)
+
+The `GetCA` response (plain HTTP, fully attacker-controlled) dictates
+`websocketHost` and `websocketPort`. A test served the garden the accepted
+vendor CA and set `websocketPort` to a plain, non-TLS port with a byte logger.
+The garden **obeyed the redirect** — it connected to the named port — but it
+still opened a **TLS ClientHello** there (`16 03 01 …`, offering the RSA
+key-exchange ciphers seen in the original capture). So the garden chooses TLS
+from firmware, not from the port number; pointing it at a plain port does not
+downgrade it. We control where the garden connects, but not whether it uses
+TLS, so the server-certificate requirement (and the CA-file blocker above)
+stands. **[OBS]**
+
 ### Next step for a local bridge
 
 The one remaining blocker to a local cloud replacement is the CA-file header
