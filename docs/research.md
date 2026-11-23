@@ -54,8 +54,8 @@ A 2023 forum thread notes the router shows a new device when the garden joins, e
 
 | App | Package | Version | Technology |
 |---|---|---|---|
-| New app | `com.aerogarden.app` | 2.1.4 | Flutter (Dart AOT), analysed through a disassembly of the compiled library and bundled assets |
-| Old app | `com.intretech.bounty` | 1.6.16 | Java, analysed through decompiled sources |
+| New app | `com.aerogarden.app` | 2.1.4 | Flutter (Dart AOT); static analysis of the compiled library and bundled assets |
+| Old app | `com.intretech.bounty` | 1.6.16 | Java; static analysis of the app code |
 
 ### Key findings
 
@@ -67,9 +67,7 @@ A 2023 forum thread notes the router shows a new device when the garden joins, e
 6. Light and pump schedules use decimal string encodings in the new API (`HHMMHHMM`, `{on:03}{off:03}`), versus hex in the old API.
 7. The old app's Wi-Fi gardens were controlled only through the cloud; its `C5` socket frames are unused code there.
 8. The garden-to-cloud protocol appears in neither app. It is the main unknown.
-9. The 2.1.4 APK contains no network security configuration, bundled certificates or pinning package. An earlier community report of a failed traffic-inspection attempt is consistent with Android's default of not trusting user-installed CAs in apps. This does not matter for a local integration, which does not need the official app.
-10. The old app disables TLS validation in its HTTP client and contains an expired (2021) certificate that is never applied.
-11. No firmware or update endpoint exists in either app for Wi-Fi gardens. Firmware changes therefore travel over the garden-to-cloud link.
+9. No firmware or update endpoint exists in either app for Wi-Fi gardens. Firmware updates are therefore most likely delivered over the garden-to-cloud link.
 
 ### Traffic observation
 
@@ -84,7 +82,7 @@ Observed on the owner's own network, for a Bounty Elite:
 
 The approach is the same pattern other projects use for cloud-connected devices (see the table below):
 
-1. **DNS.** The local DNS server resolves the garden's cloud hostname to a machine on the LAN. Nothing is changed on the garden.
+1. **DNS.** The local DNS server resolves the garden's cloud hostname to a machine on the LAN, for the garden's address only (the phone app uses the same hostname). Nothing is changed on the garden.
 2. **Certificates.** The garden connects over TLS and fetches a CA certificate over HTTP. The local server serves its own CA certificate on port 80 and presents a server certificate signed by that CA on port 8443. Whether the garden accepts this depends on how it validates the chain; that is to be tested.
 3. **Protocol.** Once the garden connects, the local server needs to speak the application protocol. It can be learned by logging the bytes the garden sends and observing how it reacts to what the server returns.
 4. **Local API.** The server exposes state and controls to Home Assistant.
@@ -94,7 +92,7 @@ If the garden turns out to validate the connection in a way that cannot be satis
 Additional notes:
 
 - Re-pointing DNS is reversible by deleting the rule.
-- Firmware updates can break reverse-engineered protocols. Once local control works, the garden's update path should be left unreachable (as the iRobot community recommends), so that updates arrive only when the owner chooses.
+- A firmware update can change the garden's protocol. Once local control works, the owner may prefer to keep the garden's update path unreachable (as the iRobot community recommends), so that updates are installed only when the owner chooses.
 - Plan order from the research: passive observation first, then the local server, then optionally a cloud-API integration as a fallback.
 
 ## Techniques from other projects
@@ -110,7 +108,6 @@ Additional notes:
 | python-miio | Xiaomi | Per-device token over UDP 54321, fetched once from the cloud | Token model; no token concept seen for the garden |
 | python-broadlink | Broadlink | Local protocol; provisioning sends Wi-Fi credentials to the device in AP mode | Similar to the garden's SoftAP provisioning for older models |
 | Govee LAN API, Bambu Lab LAN mode | Govee, Bambu | Vendor-provided local modes enabled in the app or on the device screen | A hidden local mode on the garden's touchscreen is unlikely but cheap to check |
-| tuya-cloudcutter | Tuya (Beken, Realtek) | Firmware-level detachment from the cloud on specific chips | Wrong chips and cloud; not applicable |
 
 ## Hardware notes
 

@@ -4,7 +4,7 @@ This document collects what is known about how AeroGarden Wi-Fi gardens, the off
 
 Evidence labels used below:
 
-- **[APP]** read in the decompiled official app (new app 2.1.4 or old app 1.6.16)
+- **[APP]** found by static analysis of the official Android app (new app 2.1.4 or old app 1.6.16)
 - **[OBS]** observed on the owner's own network
 - **[INF]** inference, not proven
 
@@ -174,7 +174,7 @@ The app loads the device list over REST and then listens to a Firestore collecti
 
 ### Observed behaviour of the hosts
 
-Observed with unauthenticated requests on 2026-11-23:
+Observed with unauthenticated requests on 2026-11-22:
 
 | Request | Result |
 |---|---|
@@ -405,7 +405,7 @@ An existing Home Assistant integration for the Stem grow light already uses this
 
 ## Hardware
 
-- The garden electronics are built by **Xiamen Intretech**. The app packages are `com.intretech.bounty` (old) and `com.aerogarden.app` (new).
+- The garden electronics are built by **Xiamen Intretech**, which is also the publisher named in the old app's package (`com.intretech.bounty`). The new app is `com.aerogarden.app`.
 - Wi-Fi gardens use one of two module families, according to the old app's provisioning code and public FCC filings:
   - **Marvell 88MC200** (Cortex-M3) with an **88W8801** 2.4 GHz Wi-Fi chip, on a module marked "SM008A". Seen in the Harvest Elite (FCC ID 2AJNO1006).
   - **MediaTek MT7682** (Cortex-M4 Wi-Fi SoC), in later revisions (FCC filings `2AJNO1006MTK`, `2AJNO1009MTK`, `2AJNO-MT7682`). **[INF]**

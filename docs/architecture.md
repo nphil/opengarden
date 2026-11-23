@@ -51,7 +51,7 @@ The bridge does not run DNS. The owner adds a single record on the router or loc
 app5.aerogarden.com  ->  192.168.1.x   (the bridge)
 ```
 
-Ideally the record applies only to the garden's address, so phones and other devices continue to reach the vendor's service. Removing the record restores the original behaviour.
+The phone app uses the same hostname (`app5.aerogarden.com`), so a house-wide record would send the phone app to the bridge as well, and the app would stop working. The record should therefore apply to the garden's address only: a per-client rule in AdGuard Home or Pi-hole, or a router destination-NAT rule that matches the garden's source address on ports 80 and 8443. Removing the rule restores the original behaviour.
 
 ## Home Assistant integration
 

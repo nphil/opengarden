@@ -25,12 +25,12 @@ AeroGarden Wi-Fi gardens (Bounty Elite and relatives) are controlled today only 
 | AeroGarden Bounty Elite | Marvell 88MC200 + 88W8801, or MediaTek MT7682 in later revisions (unconfirmed per unit) | Primary target, research in progress |
 | AeroGarden Bounty / Bounty Basic | Same family | Expected to work the same way, untested |
 | AeroGarden Farm 12 / 24 series | Same family | Expected, untested. Known to have the LAN port 8080 light-lift command |
-| Harvest Elite / Harvest Classic | Marvell (older SoftAP provisioning flow) | Provisioning documented; otherwise untested |
+| Harvest Elite / Harvest Classic | Marvell or MediaTek (SoftAP provisioning flow) | Provisioning documented; otherwise untested |
 | Stem / Tabletop / Trio grow lights | Bluetooth LE only | Out of scope (an existing BLE integration covers the Stem light) |
 
 ## How it works (planned)
 
-1. **Local DNS.** Your router or DNS server answers the garden's cloud hostname (`app5.aerogarden.com`) with the address of a machine on your LAN running the OpenGarden bridge. Only the garden's traffic needs this; other devices are unaffected.
+1. **Local DNS.** Your router or DNS server answers the garden's cloud hostname (`app5.aerogarden.com`) with the address of a machine on your LAN running the OpenGarden bridge. The official phone app uses the same hostname, so the rule should apply to the garden only (a per-client DNS rule, or a router rule matched on the garden's address); a house-wide record would stop the phone app from working.
 2. **Local certificate authority.** The garden opens a TLS connection to the cloud host on port 8443 and, as observed, retrieves a CA certificate over plain HTTP before doing so. The bridge serves its own CA certificate on port 80 and presents a server certificate signed by it on port 8443.
 3. **Local server.** The bridge accepts the garden's connection, keeps it alive, and exposes the garden's state and controls on a local API.
 4. **Home Assistant.** A custom integration reads state and sends commands through the bridge. No account or internet access is required.
@@ -64,7 +64,7 @@ Useful contributions right now:
 
 - Packet captures of a garden's own traffic on your network (remove your Wi-Fi password and account details first).
 - Which Wi-Fi chip family your unit uses (the FCC ID on its label helps).
-- Results of a one-time port scan of your own garden's LAN address.
+- Whether your own garden accepts a TCP connection on port 8080 of its LAN address.
 - Corrections to the documents, especially the open questions in the protocol reference.
 
 Please never post credentials, tokens, account e-mail addresses or your real MAC address or network details.
