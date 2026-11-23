@@ -15,8 +15,9 @@ AeroGarden Wi-Fi gardens (Bounty Elite and relatives) are controlled today only 
 | LAN TCP port 8080 frame format | Documented (two commands known) |
 | Wi-Fi provisioning (SoftAP) | Documented for older models |
 | Garden-to-cloud connection (TLS, port 8443, 2 s heartbeat) | Connection behaviour observed; the application protocol inside it is **not yet decoded** |
-| Local bridge server | Planned, see [docs/architecture.md](docs/architecture.md) |
-| Home Assistant integration | Planned |
+| CA trust file over HTTP | Format decoded: 32-byte header + PEM. **Blocker:** two computed header fields (bytes 4-7 and 16-19) are not reproduced, so a local bridge's CA is rejected. See [docs/protocol.md](docs/protocol.md#ca-trust-file-format-and-phase-1-bridge-results) |
+| Local bridge server | Phase 1 built and tested; stalls on the CA-file blocker above — see [docs/architecture.md](docs/architecture.md#development-phases) |
+| Home Assistant integration | Planned. The cloud REST API is the only working control path until the CA blocker is solved |
 
 ## Supported hardware
 

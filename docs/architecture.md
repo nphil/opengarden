@@ -90,17 +90,27 @@ Some entities depend on open questions in the protocol reference (for example th
 | Phase | Goal | Status |
 |---|---|---|
 | 0. Research | Document the phone-app API, state model, encodings and LAN frames; survey prior work | Done (see docs) |
-| 1. Capture | Stand up a listener on port 80 and 8443 with a local CA, point the garden at it through DNS, and log everything the garden sends. Establish whether the garden accepts the local certificate chain | Next |
-| 2. Decode | Work out framing, authentication and the message set of the garden-to-cloud protocol from the logs | |
+| 1. Capture | Stand up a listener on port 80 and 8443 with a local CA, point the garden at it through DNS, and log everything the garden sends. Establish whether the garden accepts the local certificate chain | Done — see result below |
+| 2. Decode | Work out framing, authentication and the message set of the garden-to-cloud protocol from the logs | Blocked on the phase-1 result |
 | 3. Bridge | Implement the server: connection handling, state model, local API, persistence | |
 | 4. Home Assistant | Custom integration with the entity set above; HACS packaging | |
 | 5. Hardening | Documentation, container image, tests against recorded traffic, handling of multiple gardens and of firmware updates | |
 
-Fallbacks if phase 1 shows the garden cannot be pointed at a local server:
+**Phase 1 result.** The bridge stood up and the garden reached it: it fetched the
+CA over HTTP, and it accepted the original vendor CA bytes served back verbatim.
+It **rejected a replacement CA**, so it never opened the TLS connection, and no
+application bytes were captured. The cause is a 32-byte header on the CA file with
+two computed fields that could not be reproduced — the full finding is in
+[protocol.md](protocol.md#ca-trust-file-format-and-phase-1-bridge-results). Phase 2
+(decode) cannot start until that header algorithm is known. The garden's firmware,
+which contains it, is delivered only inside the TLS connection and so cannot be
+pulled over the network.
 
-1. A Home Assistant integration that calls the vendor's phone-app REST API (fully documented in [protocol.md](protocol.md)). This depends on the vendor's service staying available but needs no changes to the garden.
-2. A one-time check of the garden's LAN port 8080 (the Farm light lift uses it) to see whether the Bounty Elite exposes any local interface.
-3. Hardware-level options, only if the owner explicitly chooses them.
+Fallbacks, given the phase-1 result:
+
+1. A Home Assistant integration that calls the vendor's phone-app REST API (fully documented in [protocol.md](protocol.md)). This depends on the vendor's service staying available but needs no changes to the garden. **This is currently the only working control path.**
+2. Recovering the CA-file header algorithm so the local bridge can proceed — e.g. a flash/debug read of the controller board (opening the base; the Marvell part may use read-protected internal flash), a published server-side tool, or more `CA-*.bin` samples that constrain the algorithm.
+3. The garden's LAN port 8080 was checked on a Bounty Elite: it accepts a TCP connection but returns nothing to `C5` frames or a plain read, so it is not a usable local interface here.
 
 ## Safety principles
 

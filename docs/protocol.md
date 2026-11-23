@@ -283,6 +283,97 @@ What this means for a local server:
 Historical clue: a community write-up of an older Bounty garden reported an unencrypted HTTP request to `app1.aerogarden.com` followed by a websocket carrying commands to the device, with encoded replies. The current behaviour (TLS on 8443) differs, but the message layer may be related. **[INF]**
 
 ---
+## CA trust file format and Phase 1 bridge results
+
+**[OBS]** A bridge was stood up on the owner's LAN: a local DNS record pointed
+`app5.aerogarden.com` at it, it answered the CA request on port 80, and it
+accepted TLS on port 8443 with a self-signed CA and a matching server
+certificate. The garden reached the bridge and fetched the CA, but **rejected a
+replacement CA** and never progressed to the TLS connection. When the bridge
+served the original vendor CA bytes back verbatim, the garden accepted them —
+so the DNS, the HTTP exchange, and the response shape are all correct, and the
+sole blocker is the format of the CA file itself.
+
+### The CA file has a 32-byte header
+
+`GET /api/Admin/GetCA?aioGuid=<MAC>&fwModule=kfw` returns the JSON described
+above, pointing at `GET /api/Admin/GetFile?fileName=CA-KFW-2041-DIGI-G2.bin`.
+That file is **not** a bare PEM. It is a 32-byte binary header followed by the
+PEM certificate (DigiCert Global Root G2):
+
+| Offset | Bytes (kfw sample) | Meaning |
+|---|---|---|
+| 0-3   | `24 05 00 00` | u32 little-endian = 1316, the PEM payload length |
+| 4-7   | `fe ca 58 03` | computed field A (see below) |
+| 8-11  | `4b 46 57 00` | ASCII `KFW\0`, the module name (matches `fwModule=`) |
+| 12-15 | `32 30 34 31` | ASCII `2041`, the version (matches `versionName` `CA-V2041`) |
+| 16-19 | `8e 5d 98 00` | computed field B (see below) |
+| 20-31 | `00 …`        | zero padding |
+
+Total file size is 1348 bytes (32 + 1316), matching `pkgSize` in the JSON.
+
+### The two computed fields block CA replacement
+
+Requesting the same endpoint with a different `fwModule` gives a second sample
+that wraps the identical PEM:
+
+| Module | Byte 8 | Field A (4-7) | Field B (16-19) |
+|---|---|---|---|
+| `kfw` | `4b` (`K`) | `fe ca 58 03` | `8e 5d 98 00` |
+| `mfw` | `4d` (`M`) | `fe ca 58 03` | `e4 4e da 04` |
+
+From the two samples:
+
+- **Field A (bytes 4-7)** is unchanged when only the module name changes, so it
+  depends on the PEM payload only.
+- **Field B (bytes 16-19)** changes with the module name, so it depends on the
+  header fields (at least the module name), and presumably the PEM as well.
+
+When a bridge serves its own CA with these two fields copied verbatim from the
+vendor file (correct module, version, and size), the garden still rejects it —
+confirming both fields are content-dependent and must be recomputed for a new
+certificate.
+
+Field A and Field B were tested against a wide set of algorithms over the PEM,
+the DER, the base64 body, and header+payload combinations: CRC-32 (standard and
+the Marvell no-preset/no-final-invert variant, plus several polynomial and
+reflection variants), CRC-16 (CCITT, IBM, MODBUS, XMODEM, DNP, MAXIM, USB),
+CRC-24 (OpenPGP), Adler-32, Fletcher-16/32, negated byte sums, XOR,
+DJB2/SDBM/FNV-1a/Jenkins/Murmur mixing, and MD5/SHA-1/SHA-256 truncations.
+**None matched.** The algorithm is not yet identified.
+
+The two official apps do **not** compute this header. Static analysis of the
+legacy app's grow-light updater shows it reads the 32-byte header and forwards
+it unchanged, and uses one-byte sums only for its own Bluetooth framing. The
+header is produced server-side and verified by the garden firmware. **[APP]**
+
+### Firmware is delivered inside the TLS connection
+
+The touchscreen `Settings → Wi-Fi → Software Update` performs the firmware check
+over the TLS link (port 8443), not over the plain-HTTP GetFile endpoint. On an
+up-to-date unit it reports "up to date" and downloads nothing, so the firmware
+image cannot be captured from the network this way. The GetCA/GetFile endpoints
+over plain HTTP serve only CA files (`deviceTypeValue` `CA`); only `fwModule`
+values `kfw` and `mfw` return data. Recovering the header algorithm from the
+firmware therefore requires reading the device flash directly — which means
+opening the base, and the Marvell part may store code in internal,
+read-protected flash. **[OBS]**
+
+### Next step for a local bridge
+
+The one remaining blocker to a local cloud replacement is the CA-file header
+algorithm (fields A and B). Candidate ways to recover it: a flash/debug read of
+the garden's controller board, a leaked or published server-side tool, or more
+`CA-*.bin` samples that constrain the algorithm. Until then, the local bridge
+cannot complete the TLS handshake, and the documented cloud REST API (link A) is
+the only working control path.
+
+### Observed unit
+
+One Bounty Elite, touchscreen `Settings → Garden Status` version
+`KFW-V0.47 / SW-V1.02`. `Settings → Wi-Fi` menu options: Connect to Wi-Fi, Scan
+Code, Software Update, Unpair Garden, Troubleshooting, Disable WiFi. **[OBS]**
+
 
 ## LAN TCP port 8080
 
@@ -316,7 +407,7 @@ C5 | len | cmdHi cmdLo | plen | hdrChk | payload... | pChk
 
 Usage by the app: open a TCP connection to the garden's LAN address (taken from the cloud state `network.deviceIpAddress`, 5 second connect timeout), write the frame, and close the socket to stop. A connect-then-disconnect is also used as a reachability probe.
 
-Only the seven Farm models use this. The Bounty, Bounty Elite, Bounty Classic and Harvest do not. This indicates that at least Farm firmware runs an unauthenticated TCP server on port 8080 that accepts `C5` frames; whether a Bounty Elite runs the same server, and which other command ids exist, is unknown. **[INF]**
+Only the seven Farm models use this in the app. The Bounty, Bounty Elite, Bounty Classic and Harvest do not. On a Bounty Elite, port 8080 **does accept a TCP connection** but returns nothing to a `C5` lift frame, to other `C5` command ids, or to a plain read — consistent with a light-lift server whose only effect is physical (a motor) with no network reply, on a unit that has no lift. Whether it exposes any other local interface is unknown. **[OBS]**
 
 ---
 
@@ -418,20 +509,33 @@ An existing Home Assistant integration for the Stem grow light already uses this
 
 ## Open questions
 
-In priority order:
+In priority order. The top blocker is now item 1.
 
-1. **Garden-to-cloud application protocol**: framing, authentication, message set, state reports, command delivery, firmware update flow. Needs a capture of the garden's own connection to a local server.
-2. Whether the garden validates the server certificate chain and host name against the CA it fetches over plain HTTP, and what happens when validation fails.
-3. Does the Bounty Elite accept TCP on port 8080 on the LAN, and with which command ids? (Farm firmware does for command `0x003D`.)
-4. Meaning of the first pair of `light.cycle` (see [Light cycle](#light-cycle)); confirm against a live reading from a garden with a known schedule.
-5. Units of `dimming`, `sunrise`, `sunset` (0-100 and minutes are assumed).
-6. `light.status` versus `light.temporaryStatus`.
-7. `alarm.cycle` format and `alarm.status` versus `alarm.enabled`.
-8. `nutrition.cycle`, `nutrition.reminder` (days left?) and `reminderFlag`.
-9. Body of `PUT v1/devices/{id}/environment`.
-10. Whether a Bounty Elite produces one state entry or one per side, and what `side` is for it.
-11. Exact error text for a wrong model (400) and for an offline garden on claim.
-12. Firestore device document id and any extra fields.
-13. Whether the legacy `/api/*` surface still answers on `app1` and `app3`.
-14. What `network.serverIpAddress` contains.
-15. Which Wi-Fi chip family each unit uses.
+1. **CA-file header algorithm (the main blocker).** How fields A (bytes 4-7) and
+   B (bytes 16-19) of the 32-byte CA-file header are computed. Without this a
+   bridge cannot present a CA the garden trusts, so the TLS connection never
+   starts. See [CA trust file format](#ca-trust-file-format-and-phase-1-bridge-results).
+2. **Garden-to-cloud application protocol**: framing, authentication, message
+   set, state reports, command delivery, firmware update flow. Blocked on item 1,
+   since the bytes only become visible once the garden accepts the bridge's CA
+   and completes the TLS handshake.
+3. Whether the garden pins or otherwise further validates the server certificate
+   beyond chaining to the fetched CA (host name, key, etc.). Partly answered: the
+   garden accepts a self-signed CA served in the vendor file's exact wrapper, so
+   the CA is not pinned; the open part is what else it checks once the CA passes.
+4. Port 8080 on a Bounty Elite accepts a TCP connection but returns nothing to
+   `C5` frames or a plain read (see [LAN TCP port 8080](#lan-tcp-port-8080)).
+   Whether it exposes any other local interface, and what Farm `C5` command ids
+   exist beyond `0x003D`, is still open.
+5. Meaning of the first pair of `light.cycle` (see [Light cycle](#light-cycle)); confirm against a live reading from a garden with a known schedule.
+6. Units of `dimming`, `sunrise`, `sunset` (0-100 and minutes are assumed).
+7. `light.status` versus `light.temporaryStatus`.
+8. `alarm.cycle` format and `alarm.status` versus `alarm.enabled`.
+9. `nutrition.cycle`, `nutrition.reminder` (days left?) and `reminderFlag`.
+10. Body of `PUT v1/devices/{id}/environment`.
+11. Whether a Bounty Elite produces one state entry or one per side, and what `side` is for it.
+12. Exact error text for a wrong model (400) and for an offline garden on claim.
+13. Firestore device document id and any extra fields.
+14. Whether the legacy `/api/*` surface still answers on `app1` and `app3`.
+15. What `network.serverIpAddress` contains.
+16. Which Wi-Fi chip family each unit uses.
