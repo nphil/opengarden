@@ -83,7 +83,14 @@ def _build_wrapped_ca() -> bytes:
 
 
 async def _serve_get_ca(writer: asyncio.StreamWriter):
-    wrapped = _build_wrapped_ca()
+    # If the original vendor CA file exists, serve it for A/B testing.
+    # Otherwise serve our generated+wrapped CA.
+    original = CONFIG_DIR / "original-ca.bin"
+    if original.exists():
+        wrapped = original.read_bytes()
+        log.info("HTTP serving ORIGINAL vendor CA file (%d bytes)", len(wrapped))
+    else:
+        wrapped = _build_wrapped_ca()
     body = json.dumps({
         "fw_url": (
             f"http://{HOSTNAME}/api/Admin/GetFile"
@@ -92,21 +99,26 @@ async def _serve_get_ca(writer: asyncio.StreamWriter):
         "bwVersion": "KFW",
         "deviceTypeValue": "CA",
         "pkgSize": len(wrapped),
-        "versionCode": 300000,
+        "versionCode": 300001,
         "versionName": "CA-V2041",
         "websocketHost": HOSTNAME,
         "websocketPort": TLS_PORT,
     })
     _write_http(writer, 200, "application/json; charset=utf-8", body.encode())
     await writer.drain()
-    log.info("HTTP served GetCA (wrapped size %d)", len(wrapped))
+    log.info("HTTP served GetCA (size %d, versionCode 300001)", len(wrapped))
 
 
 async def _serve_ca_file(writer: asyncio.StreamWriter):
-    wrapped = _build_wrapped_ca()
+    original = CONFIG_DIR / "original-ca.bin"
+    if original.exists():
+        wrapped = original.read_bytes()
+        log.info("HTTP serving ORIGINAL vendor CA (%d bytes)", len(wrapped))
+    else:
+        wrapped = _build_wrapped_ca()
+        log.info("HTTP serving generated CA (%d bytes, with header)", len(wrapped))
     _write_http(writer, 200, "application/octet-stream", wrapped)
     await writer.drain()
-    log.info("HTTP served CA file (%d bytes, with firmware header)", len(wrapped))
 
 
 async def _serve_404(writer: asyncio.StreamWriter, path: str):
