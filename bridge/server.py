@@ -61,16 +61,37 @@ async def handle_http(reader: asyncio.StreamReader, writer: asyncio.StreamWriter
         await writer.wait_closed()
 
 
+def _build_wrapped_ca() -> bytes:
+    """Wrap our PEM CA cert in the 32-byte firmware header the garden expects.
+
+    The original CA file (CA-KFW-2041-DIGI-G2.bin) has this structure:
+      [0:4]   u32 LE  PEM body size
+      [4:8]   fe ca 58 03  (constant)
+      [8:12]  "KFW\\0"  (module name, matches fwModule= query param)
+      [12:16] "2041"   (version, from versionName "CA-V2041")
+      [16:19] 8e 5d 98 (constant in the original; purpose unknown)
+      [19:32] zero padding
+    """
+    pem = (CERTS_DIR / "ca.pem").read_bytes()
+    hdr = bytearray(32)
+    struct.pack_into("<I", hdr, 0, len(pem))
+    hdr[4:8] = b"\xfe\xca\x58\x03"
+    hdr[8:12] = b"KFW\x00"
+    hdr[12:16] = b"2041"
+    hdr[16:19] = b"\x8e\x5d\x98"
+    return bytes(hdr) + pem
+
+
 async def _serve_get_ca(writer: asyncio.StreamWriter):
-    ca_size = (CERTS_DIR / "ca.pem").stat().st_size
+    wrapped = _build_wrapped_ca()
     body = json.dumps({
         "fw_url": (
             f"http://{HOSTNAME}/api/Admin/GetFile"
-            f"?fileName=opengarden-ca.pem"
+            f"?fileName=opengarden-ca.bin"
         ),
         "bwVersion": "KFW",
         "deviceTypeValue": "CA",
-        "pkgSize": ca_size,
+        "pkgSize": len(wrapped),
         "versionCode": 300000,
         "versionName": "CA-V2041",
         "websocketHost": HOSTNAME,
@@ -78,14 +99,14 @@ async def _serve_get_ca(writer: asyncio.StreamWriter):
     })
     _write_http(writer, 200, "application/json; charset=utf-8", body.encode())
     await writer.drain()
-    log.info("HTTP served GetCA (ca %d bytes)", ca_size)
+    log.info("HTTP served GetCA (wrapped size %d)", len(wrapped))
 
 
 async def _serve_ca_file(writer: asyncio.StreamWriter):
-    ca_bytes = (CERTS_DIR / "ca.pem").read_bytes()
-    _write_http(writer, 200, "application/x-pem-file", ca_bytes)
+    wrapped = _build_wrapped_ca()
+    _write_http(writer, 200, "application/octet-stream", wrapped)
     await writer.drain()
-    log.info("HTTP served CA certificate (%d bytes)", len(ca_bytes))
+    log.info("HTTP served CA file (%d bytes, with firmware header)", len(wrapped))
 
 
 async def _serve_404(writer: asyncio.StreamWriter, path: str):
